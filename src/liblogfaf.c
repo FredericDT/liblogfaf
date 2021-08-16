@@ -15,6 +15,8 @@
 #include <limits.h>
 #include <pthread.h>
 
+#include "liblogfaf.h"
+
 #if defined(__APPLE__)
 #include <crt_externs.h>
 #define HOST_NAME_MAX 255
@@ -147,12 +149,10 @@ static void init_connection(SharedData *sd) {
     }
 }
 
-static void logmessage(SharedData *sd, int priority, const char *message) {
-    DBG(("liblogfaf: logmessage(%d, %s)\n", priority, message));
-    time_t ts;
+static void logmessage_with_time(SharedData *sd, int priority, const char *message, time_t ts) {
+    DBG(("liblogfaf: logmessage_with_time(%d, %s, %ld)\n", priority, message, ts));
     struct tm time_tm;
     char msg[MAX_MESSAGE_LEN];
-    ts = time(NULL);
     localtime_r(&ts, &time_tm);
 
     snprintf(msg, MAX_MESSAGE_LEN, "<%u>%s %2d %02d:%02d:%02d %s %s: %s",
@@ -164,6 +164,14 @@ static void logmessage(SharedData *sd, int priority, const char *message) {
     // We want fire-and-forget, so lack of error checking here is intentional
     sendto(sd->sockfd, msg, strlen(msg), 0,
            sd->serveraddr->ai_addr, sd->serveraddr->ai_addrlen);
+}
+
+static void logmessage(SharedData *sd, int priority, const char *message) {
+    DBG(("liblogfaf: logmessage(%d, %s)\n", priority, message));
+    time_t ts;
+    ts = time(NULL);
+
+    logmessage_with_time(sd, priority, message, ts);
 }
 
 __attribute__((constructor)) static void _liblogfaf_init(void) {
@@ -237,3 +245,12 @@ void syslog(int priority, const char *format, ...) {
     logmessage(&shared_data, priority, str);
 }
 
+void syslog_time(int priority, time_t ts, const char *format, ...) {
+    DBG(("liblogfaf: syslog_time(%d, %ld, %s)\n", priority, ts, format));
+    va_list ap;
+    char str[MAX_MESSAGE_LEN];
+    va_start(ap, format);
+    vsnprintf(str, MAX_MESSAGE_LEN, format, ap);
+    va_end(ap);
+    logmessage_with_time(&shared_data, priority, str, ts);
+}
